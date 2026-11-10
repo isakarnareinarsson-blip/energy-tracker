@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Task & Energy Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #EDF0F5;
+    --surface: #FFFFFF;
+    --ink: #1B2140;
+    --muted: #5A6283;
+    --line: #D3D9E6;
+    --energy: #E39A26;
+    --energy-ink: #2A1B00;
+    --done: #23796E;
+    --warn: #B4472F;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151A30;
+      --surface: #1F2542;
+      --ink: #ECEEF8;
+      --muted: #A0A8C8;
+      --line: #343C63;
+      --energy: #F5B84A;
+      --energy-ink: #2A1B00;
+      --done: #62C9B9;
+      --warn: #F0907A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151A30;
+    --surface: #1F2542;
+    --ink: #ECEEF8;
+    --muted: #A0A8C8;
+    --line: #343C63;
+    --energy: #F5B84A;
+    --energy-ink: #2A1B00;
+    --done: #62C9B9;
+    --warn: #F0907A;
+    color-scheme: dark;
+  }
+
+  /* Warm pastel palette */
+  :root[data-palette="warm"] {
+    --bg: #FCEEE9;
+    --surface: #FFF9F5;
+    --ink: #4A3340;
+    --muted: #7D6470;
+    --line: #F0D3CB;
+    --energy: #F4A98A;
+    --energy-ink: #4A2412;
+    --done: #6E9E80;
+    --warn: #B5485A;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-palette="warm"]:not([data-theme="light"]) {
+      --bg: #2B2026;
+      --surface: #382A31;
+      --ink: #F8ECE6;
+      --muted: #C4A9AE;
+      --line: #4D3A42;
+      --energy: #F6B79C;
+      --energy-ink: #4A2412;
+      --done: #A5CDB0;
+      --warn: #F29AA0;
+      color-scheme: dark;
+    }
+  }
+  :root[data-palette="warm"][data-theme="dark"] {
+    --bg: #2B2026;
+    --surface: #382A31;
+    --ink: #F8ECE6;
+    --muted: #C4A9AE;
+    --line: #4D3A42;
+    --energy: #F6B79C;
+    --energy-ink: #4A2412;
+    --done: #A5CDB0;
+    --warn: #F29AA0;
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: inherit; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+    transition: background-color .2s, color .2s;
+  }
+  .page { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
+
+  /* Top bar */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .date { color: var(--muted); font-size: .9375rem; margin: 0; }
+  .ghost {
+    font: inherit; font-size: .875rem; font-weight: 500;
+    color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: .4rem .9rem; cursor: pointer;
+  }
+  .ghost:hover { border-color: var(--muted); }
+
+  /* Energy */
+  .energy { margin-top: 2.5rem; }
+  h1 {
+    font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.25rem, 9vw, 3.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .status { margin: .6rem 0 0; color: var(--muted); min-height: 1.5em; }
+  .status.over { color: var(--warn); }
+
+  .cells {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px;
+    margin-top: 1.5rem;
+  }
+  .cell {
+    height: 3.5rem; border-radius: 7px;
+    border: 2px solid transparent;
+    transition: background-color .25s, border-color .25s, transform .25s;
+  }
+  .cell.free { background: var(--energy); }
+  .cell.planned {
+    border-color: var(--energy);
+    background: repeating-linear-gradient(135deg, var(--energy) 0 3px, transparent 3px 9px);
+  }
+  .cell.spent { background: var(--line); }
+  .cell.off { border: 2px dashed var(--line); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: .25rem 1.25rem;
+    list-style: none; padding: 0; margin: .75rem 0 0;
+    font-size: .8125rem; color: var(--muted);
+  }
+  .legend li { display: flex; align-items: center; gap: .4rem; }
+  .legend .cell { width: .9rem; height: .9rem; border-radius: 3px; border-width: 1.5px; }
+
+  .slider-row { margin-top: 1.75rem; }
+  .slider-row label { display: flex; justify-content: space-between; font-weight: 500; }
+  .slider-row output { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 400; }
+  input[type="range"] {
+    width: 100%; margin: .6rem 0 0; accent-color: var(--energy);
+    height: 1.75rem; cursor: pointer;
+  }
+  .scale { display: flex; justify-content: space-between; font-size: .8125rem; color: var(--muted); }
+
+  /* Tasks */
+  .tasks { margin-top: 3rem; }
+  h2 {
+    font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
+    font-weight: 500; font-size: 1.5rem; line-height: 1.2; margin: 0;
+  }
+  .progress-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    margin-top: 1rem; font-size: .9375rem; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .bar {
+    height: .625rem; border-radius: 999px; background: var(--line);
+    margin-top: .4rem; overflow: hidden;
+  }
+  .bar > div {
+    height: 100%; width: 0; border-radius: 999px; background: var(--done);
+    transition: width .35s ease;
+  }
+
+  form.add {
+    display: flex; flex-wrap: wrap; gap: .625rem; align-items: stretch;
+    margin-top: 1.5rem;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; padding: .625rem;
+  }
+  form.add input[type="text"] {
+    flex: 1 1 12rem; min-width: 0;
+    font: inherit; color: var(--ink);
+    background: transparent; border: 0; padding: .5rem .625rem;
+  }
+  form.add input[type="text"]::placeholder { color: var(--muted); }
+  form.add input[type="text"]:focus { outline: none; }
+  form.add:focus-within { border-color: var(--ink); }
+
+  fieldset.cost {
+    display: flex; align-items: center; gap: .5rem;
+    border: 0; margin: 0; padding: 0; min-width: 0;
+  }
+  fieldset.cost legend {
+    float: left; padding: 0; margin-right: .1rem;
+    font-size: .875rem; color: var(--muted);
+  }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg label { position: relative; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .seg span {
+    display: block; min-width: 2.25rem; padding: .45rem 0; text-align: center;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .seg label + label span { border-left: 1px solid var(--line); }
+  .seg input:checked + span { background: var(--energy); color: var(--energy-ink); }
+  .seg input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+  .primary {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--ink); color: var(--bg);
+    border: 0; border-radius: 9px; padding: .5rem 1.1rem;
+  }
+  .primary:hover { opacity: .88; }
+
+  ul.list { list-style: none; margin: 1rem 0 0; padding: 0; }
+  ul.list li {
+    display: grid; grid-template-columns: auto 1fr auto auto; align-items: center;
+    gap: .875rem; padding: .875rem .25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .check {
+    appearance: none; -webkit-appearance: none; margin: 0;
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    border: 2px solid var(--muted); cursor: pointer;
+    display: grid; place-content: center;
+    transition: background-color .15s, border-color .15s;
+  }
+  .check::after {
+    content: ""; width: .6rem; height: .35rem;
+    border-left: 2.5px solid var(--bg); border-bottom: 2.5px solid var(--bg);
+    transform: rotate(-45deg) translateY(-1px) scale(0); transition: transform .15s;
+  }
+  .check:checked { background: var(--done); border-color: var(--done); }
+  .check:checked::after { transform: rotate(-45deg) translateY(-1px) scale(1); }
+
+  .name { min-width: 0; overflow-wrap: anywhere; }
+  .name small { display: block; color: var(--warn); font-size: .8125rem; }
+  li.done .name > span { color: var(--muted); text-decoration: line-through; }
+
+  .pips { display: flex; gap: 3px; }
+  .pips i {
+    width: .5rem; height: 1.1rem; border-radius: 2px;
+    border: 1.5px solid var(--energy);
+  }
+  .pips i.on { background: var(--energy); }
+  li.done .pips i { border-color: var(--line); }
+  li.done .pips i.on { background: var(--line); }
+
+  .remove {
+    font: inherit; font-size: 1.25rem; line-height: 1;
+    width: 2rem; height: 2rem; border-radius: 50%;
+    background: transparent; color: var(--muted); border: 0; cursor: pointer;
+  }
+  .remove:hover { color: var(--warn); background: var(--line); }
+
+  .empty { color: var(--muted); padding: 1.5rem .25rem; margin: 0; }
+  .foot { margin-top: 1.5rem; display: flex; justify-content: flex-end; }
+
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <p class="date" id="date"></p>
+    <div class="actions">
+      <button class="ghost" id="palette" type="button">Warm pastels</button>
+      <button class="ghost" id="theme" type="button">Dark mode</button>
+    </div>
+  </header>
+
+  <section class="energy" aria-labelledby="reading">
+    <h1 id="reading">7 of 7 energy left</h1>
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <div class="cells" id="cells" aria-hidden="true"></div>
+    <ul class="legend" aria-hidden="true">
+      <li><span class="cell free"></span>Free</li>
+      <li><span class="cell planned"></span>Planned</li>
+      <li><span class="cell spent"></span>Spent</li>
+    </ul>
+
+    <div class="slider-row">
+      <label for="energy"><span>Today’s energy</span><output id="energyOut" for="energy">7 of 10</output></label>
+      <input type="range" id="energy" min="1" max="10" step="1" value="7">
+      <div class="scale" aria-hidden="true"><span>1 · running on empty</span><span>10 · fully charged</span></div>
+    </div>
+  </section>
+
+  <section class="tasks" aria-labelledby="tasksTitle">
+    <h2 id="tasksTitle">Tasks</h2>
+
+    <div class="progress-head">
+      <span id="progressText">No tasks yet</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="bar" role="progressbar" aria-labelledby="progressText" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="bar"><div id="barFill"></div></div>
+
+    <form class="add" id="addForm" autocomplete="off">
+      <label class="sr" for="taskName">Task</label>
+      <input type="text" id="taskName" placeholder="What do you want to get done?" maxlength="120" required>
+      <fieldset class="cost">
+        <legend>Energy cost</legend>
+        <div class="seg">
+          <label><input type="radio" name="cost" value="1" checked><span>1</span></label>
+          <label><input type="radio" name="cost" value="2"><span>2</span></label>
+          <label><input type="radio" name="cost" value="3"><span>3</span></label>
+        </div>
+      </fieldset>
+      <button class="primary" type="submit">Add task</button>
+    </form>
+
+    <ul class="list" id="list"></ul>
+    <p class="empty" id="empty">Nothing planned. Add a task and pick how much energy it will take: 1 is light, 3 is heavy.</p>
+
+    <div class="foot">
+      <button class="ghost" id="clear" type="button" hidden>Clear all tasks</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var KEY = 'energy-tracker-v1', THEME_KEY = 'energy-tracker-theme';
+  var $ = function (id) { return document.getElementById(id); };
+  var today = new Date().toDateString();
+  var state = { date: today, energy: 7, tasks: [] };
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.tasks)) return;
+      state.energy = Math.min(10, Math.max(1, Number(s.energy) || 7));
+      state.tasks = s.tasks.filter(function (t) { return t && typeof t.name === 'string'; });
+      // New day: keep unfinished tasks, drop finished ones.
+      if (s.date !== today) state.tasks = state.tasks.filter(function (t) { return !t.done; });
+    } catch (e) {}
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  /* Theme */
+  var root = document.documentElement;
+  function currentTheme() {
+    var set = root.getAttribute('data-theme');
+    if (set) return set;
+    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function paintThemeButton() {
+    var dark = currentTheme() === 'dark';
+    $('theme').textContent = dark ? 'Light mode' : 'Dark mode';
+    $('theme').setAttribute('aria-pressed', String(dark));
+  }
+  try {
+    var saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'dark' || saved === 'light') root.setAttribute('data-theme', saved);
+  } catch (e) {}
+  $('theme').addEventListener('click', function () {
+    var next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+    paintThemeButton();
+  });
+
+  /* Palette */
+  var PALETTE_KEY = 'energy-tracker-palette';
+  function paintPaletteButton() {
+    var warm = root.getAttribute('data-palette') === 'warm';
+    $('palette').textContent = warm ? 'Original colors' : 'Warm pastels';
+    $('palette').setAttribute('aria-pressed', String(warm));
+  }
+  try {
+    if (localStorage.getItem(PALETTE_KEY) === 'warm') root.setAttribute('data-palette', 'warm');
+  } catch (e) {}
+  $('palette').addEventListener('click', function () {
+    var warm = root.getAttribute('data-palette') === 'warm';
+    if (warm) root.removeAttribute('data-palette'); else root.setAttribute('data-palette', 'warm');
+    try { localStorage.setItem(PALETTE_KEY, warm ? 'default' : 'warm'); } catch (e) {}
+    paintPaletteButton();
+  });
+  paintPaletteButton();
+
+  /* Rendering */
+  function render() {
+    var energy = state.energy, spent = 0, pending = 0, done = 0;
+    state.tasks.forEach(function (t) {
+      if (t.done) { spent += t.cost; done++; } else pending += t.cost;
+    });
+    var left = energy - spent;
+    var total = state.tasks.length;
+
+    $('reading').textContent = Math.max(0, left) + ' of ' + energy + ' energy left';
+    $('energy').value = energy;
+    $('energyOut').textContent = energy + ' of 10';
+
+    var status = $('status'), over = false, msg;
+    if (left < 0) {
+      over = true;
+      msg = 'You’ve spent ' + (-left) + ' more than you had today. Time to rest.';
+    } else if (!total) {
+      msg = 'Set today’s energy, then add what you plan to do.';
+    } else if (!pending) {
+      msg = 'Everything on the list is done.';
+    } else if (pending > left) {
+      over = true;
+      msg = 'Planned tasks need ' + pending + '. That’s ' + (pending - left) + ' more than you have left.';
+    } else {
+      msg = 'Planned tasks need ' + pending + ', leaving ' + (left - pending) + ' spare.';
+    }
+    status.textContent = msg;
+    status.classList.toggle('over', over);
+
+    // Cells: free | planned | spent | beyond today's energy
+    var spentC = Math.min(spent, energy);
+    var pendC = Math.min(pending, energy - spentC);
+    var free = energy - spentC - pendC;
+    var cells = $('cells');
+    if (!cells.children.length) {
+      for (var i = 0; i < 10; i++) cells.appendChild(document.createElement('div'));
+    }
+    for (var c = 0; c < 10; c++) {
+      cells.children[c].className = 'cell ' +
+        (c < free ? 'free' : c < free + pendC ? 'planned' : c < energy ? 'spent' : 'off');
+    }
+
+    // Progress
+    var pct = total ? Math.round(done / total * 100) : 0;
+    $('progressText').textContent = total ? done + ' of ' + total + (total === 1 ? ' task done' : ' tasks done') : 'No tasks yet';
+    $('progressPct').textContent = pct + '%';
+    $('barFill').style.width = pct + '%';
+    $('bar').setAttribute('aria-valuenow', pct);
+
+    // List
+    var list = $('list');
+    list.textContent = '';
+    state.tasks.forEach(function (t) {
+      var li = document.createElement('li');
+      if (t.done) li.className = 'done';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.className = 'check'; cb.checked = !!t.done;
+      cb.setAttribute('aria-label', 'Mark “' + t.name + '” done');
+      cb.addEventListener('change', function () { t.done = cb.checked; save(); render(); });
+
+      var name = document.createElement('div');
+      name.className = 'name';
+      var label = document.createElement('span');
+      label.textContent = t.name;
+      name.appendChild(label);
+      if (!t.done && t.cost > Math.max(0, left)) {
+        var note = document.createElement('small');
+        note.textContent = 'Needs ' + t.cost + ', you have ' + Math.max(0, left) + ' left';
+        name.appendChild(note);
+      }
+
+      var pips = document.createElement('div');
+      pips.className = 'pips';
+      pips.setAttribute('role', 'img');
+      pips.setAttribute('aria-label', 'Costs ' + t.cost + ' energy');
+      for (var p = 0; p < 3; p++) {
+        var pip = document.createElement('i');
+        if (p < t.cost) pip.className = 'on';
+        pips.appendChild(pip);
+      }
+
+      var rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'remove'; rm.textContent = '×';
+      rm.setAttribute('aria-label', 'Remove “' + t.name + '”');
+      rm.addEventListener('click', function () {
+        state.tasks = state.tasks.filter(function (x) { return x !== t; });
+        save(); render();
+      });
+
+      li.appendChild(cb); li.appendChild(name); li.appendChild(pips); li.appendChild(rm);
+      list.appendChild(li);
+    });
+    $('empty').hidden = total > 0;
+    $('clear').hidden = total === 0;
+  }
+
+  /* Events */
+  $('energy').addEventListener('input', function (e) {
+    state.energy = Number(e.target.value); save(); render();
+  });
+  $('addForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = $('taskName'), name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    var cost = Number(document.querySelector('input[name="cost"]:checked').value);
+    state.tasks.push({ id: Date.now(), name: name, cost: cost, done: false });
+    input.value = ''; input.focus();
+    save(); render();
+  });
+  $('clear').addEventListener('click', function () {
+    state.tasks = []; save(); render();
+  });
+
+  $('date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  load();
+  state.date = today;
+  paintThemeButton();
+  render();
+})();
+</script>
+</body>
+</html>
