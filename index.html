@@ -269,7 +269,7 @@
   .remove:hover { color: var(--warn); background: var(--line); }
 
   .empty { color: var(--muted); padding: 1.5rem .25rem; margin: 0; }
-  .foot { margin-top: 1.5rem; display: flex; justify-content: flex-end; }
+  .foot { margin-top: 1.5rem; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -334,11 +334,13 @@
     <p class="empty" id="empty">Nothing planned. Add a task and pick how much energy it will take: 1 is light, 3 is heavy.</p>
 
     <div class="foot">
+      <button class="ghost" id="export" type="button" hidden>Export to Excel</button>
       <button class="ghost" id="clear" type="button" hidden>Clear all tasks</button>
     </div>
   </section>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script>
 (function () {
@@ -504,6 +506,7 @@
     });
     $('empty').hidden = total > 0;
     $('clear').hidden = total === 0;
+    $('export').hidden = total === 0;
   }
 
   /* Supabase sync */
@@ -599,6 +602,30 @@
     setInterval(function () { if (!live && !document.hidden) fetchTasks(); }, 10000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) fetchTasks(); });
   }
+
+  /* Export */
+  function exportTasks() {
+    var stamp = new Date().toISOString().slice(0, 10);
+    var rows = [['Task', 'Energy cost', 'Done']];
+    state.tasks.forEach(function (t) { rows.push([t.name, t.cost, t.done ? 'Yes' : 'No']); });
+    if (window.XLSX) {
+      var sheet = XLSX.utils.aoa_to_sheet(rows);
+      sheet['!cols'] = [{ wch: 40 }, { wch: 12 }, { wch: 8 }];
+      var book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, 'Tasks');
+      XLSX.writeFile(book, 'tasks-' + stamp + '.xlsx');
+      return;
+    }
+    // Excel library didn't load: fall back to a CSV file, which Excel also opens.
+    var csv = rows.map(function (r) {
+      return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }));
+    a.download = 'tasks-' + stamp + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  $('export').addEventListener('click', exportTasks);
 
   /* Events */
   $('energy').addEventListener('input', function (e) {
