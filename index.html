@@ -516,7 +516,9 @@
     setSync(what + ': ' + error.message, true);
     fetchTasks();
   }
-  function normalize(r) { return { id: r.id, name: r.name, cost: r.cost, done: !!r.done }; }
+  function normalize(r) {
+    return { id: r.id, name: r.title || r.name || '', cost: Math.min(3, Math.max(1, Number(r.cost) || 1)), done: !!r.done };
+  }
   function upsertLocal(row) {
     for (var i = 0; i < state.tasks.length; i++) {
       if (state.tasks[i].id === row.id) { state.tasks[i] = row; return; }
@@ -536,7 +538,7 @@
       state.tasks.push({ id: Date.now(), name: name, cost: cost, done: false });
       save(); render(); return;
     }
-    db.from('tasks').insert({ name: name, cost: cost, done: false }).select().single().then(function (res) {
+    db.from('tasks').insert({ title: name, cost: cost, done: false }).select().single().then(function (res) {
       if (res.error) { fail('Couldn’t add the task', res.error); return; }
       upsertLocal(normalize(res.data)); save(); render();
     });
