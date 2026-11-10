@@ -339,7 +339,7 @@
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script>
 (function () {
   /* ---- Supabase settings ---- */
@@ -507,7 +507,7 @@
   }
 
   /* Supabase sync */
-  var db = null;
+  var db = null, live = false;
   function setSync(text, bad) {
     $('sync').textContent = text;
     $('sync').classList.toggle('over', !!bad);
@@ -564,7 +564,13 @@
     if (SUPABASE_KEY.indexOf('PASTE') === 0) {
       setSync('Not syncing: add your Supabase publishable key at the top of the script.', true); return;
     }
-    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    try {
+      db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+      });
+    } catch (e) {
+      setSync('Not syncing: ' + e.message, true); return;
+    }
     setSync('Connecting…');
     db.channel('tasks-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, function (p) {
@@ -575,13 +581,21 @@
         }
         save(); render();
       })
-      .subscribe(function (status) {
-        if (status === 'SUBSCRIBED') { setSync('Synced live'); fetchTasks(); }
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          setSync('Live sync lost. Reload to see changes from other devices.', true);
+      .subscribe(function (status, err) {
+        if (status === 'SUBSCRIBED') {
+          live = true; setSync('Synced live'); fetchTasks();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // The client keeps retrying on its own; meanwhile poll so devices stay in step.
+          live = false;
+          setSync('Live updates unavailable' + (err && err.message ? ' (' + err.message + ')' : '') +
+            '. Retrying, and refreshing every 10 seconds meanwhile.', true);
+        } else if (status === 'CLOSED') {
+          live = false;
         }
       });
     fetchTasks();
+    setInterval(function () { if (!live && !document.hidden) fetchTasks(); }, 10000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) fetchTasks(); });
   }
 
   /* Events */
