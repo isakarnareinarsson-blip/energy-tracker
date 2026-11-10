@@ -170,6 +170,8 @@
     font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
     font-weight: 500; font-size: 1.5rem; line-height: 1.2; margin: 0;
   }
+  .sync { margin: .25rem 0 0; font-size: .8125rem; color: var(--muted); }
+  .sync.over { color: var(--warn); }
   .progress-head {
     display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
     margin-top: 1rem; font-size: .9375rem; color: var(--muted);
@@ -306,6 +308,7 @@
 
   <section class="tasks" aria-labelledby="tasksTitle">
     <h2 id="tasksTitle">Tasks</h2>
+    <p class="sync" id="sync" aria-live="polite"></p>
 
     <div class="progress-head">
       <span id="progressText">No tasks yet</span>
@@ -336,8 +339,13 @@
   </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function () {
+  /* ---- Supabase settings ---- */
+  var SUPABASE_URL = 'https://unhfwhjgzfwqlqzevah.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_UwYMKCovbooTjS6vYA7JWg_M6DJAxNz';
+
   var KEY = 'energy-tracker-v1', THEME_KEY = 'energy-tracker-theme';
   var $ = function (id) { return document.getElementById(id); };
   var today = new Date().toDateString();
@@ -460,7 +468,7 @@
       var cb = document.createElement('input');
       cb.type = 'checkbox'; cb.className = 'check'; cb.checked = !!t.done;
       cb.setAttribute('aria-label', 'Mark “' + t.name + '” done');
-      cb.addEventListener('change', function () { t.done = cb.checked; save(); render(); });
+      cb.addEventListener('change', function () { t.done = cb.checked; save(); render(); syncDone(t); });
 
       var name = document.createElement('div');
       name.className = 'name';
@@ -487,8 +495,8 @@
       rm.type = 'button'; rm.className = 'remove'; rm.textContent = '×';
       rm.setAttribute('aria-label', 'Remove “' + t.name + '”');
       rm.addEventListener('click', function () {
-        state.tasks = state.tasks.filter(function (x) { return x !== t; });
-        save(); render();
+        state.tasks = state.tasks.filter(function (x) { return x.id !== t.id; });
+        save(); render(); syncRemove(t);
       });
 
       li.appendChild(cb); li.appendChild(name); li.appendChild(pips); li.appendChild(rm);
@@ -496,6 +504,84 @@
     });
     $('empty').hidden = total > 0;
     $('clear').hidden = total === 0;
+  }
+
+  /* Supabase sync */
+  var db = null;
+  function setSync(text, bad) {
+    $('sync').textContent = text;
+    $('sync').classList.toggle('over', !!bad);
+  }
+  function fail(what, error) {
+    setSync(what + ': ' + error.message, true);
+    fetchTasks();
+  }
+  function normalize(r) { return { id: r.id, name: r.name, cost: r.cost, done: !!r.done }; }
+  function upsertLocal(row) {
+    for (var i = 0; i < state.tasks.length; i++) {
+      if (state.tasks[i].id === row.id) { state.tasks[i] = row; return; }
+    }
+    state.tasks.push(row);
+  }
+  function fetchTasks() {
+    if (!db) return;
+    db.from('tasks').select('*').order('created_at', { ascending: true }).then(function (res) {
+      if (res.error) { setSync('Couldn’t load tasks: ' + res.error.message, true); return; }
+      state.tasks = res.data.map(normalize);
+      save(); render();
+    });
+  }
+  function addTask(name, cost) {
+    if (!db) {
+      state.tasks.push({ id: Date.now(), name: name, cost: cost, done: false });
+      save(); render(); return;
+    }
+    db.from('tasks').insert({ name: name, cost: cost, done: false }).select().single().then(function (res) {
+      if (res.error) { fail('Couldn’t add the task', res.error); return; }
+      upsertLocal(normalize(res.data)); save(); render();
+    });
+  }
+  function syncDone(t) {
+    if (!db) return;
+    db.from('tasks').update({ done: t.done }).eq('id', t.id).then(function (res) {
+      if (res.error) fail('Couldn’t update the task', res.error);
+    });
+  }
+  function syncRemove(t) {
+    if (!db) return;
+    db.from('tasks').delete().eq('id', t.id).then(function (res) {
+      if (res.error) fail('Couldn’t remove the task', res.error);
+    });
+  }
+  function syncClear(ids) {
+    if (!db || !ids.length) return;
+    db.from('tasks').delete().in('id', ids).then(function (res) {
+      if (res.error) fail('Couldn’t clear the tasks', res.error);
+    });
+  }
+  function connect() {
+    if (!window.supabase) { setSync('Not syncing: the Supabase library didn’t load.', true); return; }
+    if (SUPABASE_KEY.indexOf('PASTE') === 0) {
+      setSync('Not syncing: add your Supabase publishable key at the top of the script.', true); return;
+    }
+    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    setSync('Connecting…');
+    db.channel('tasks-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, function (p) {
+        if (p.eventType === 'DELETE') {
+          state.tasks = state.tasks.filter(function (t) { return t.id !== p.old.id; });
+        } else {
+          upsertLocal(normalize(p.new));
+        }
+        save(); render();
+      })
+      .subscribe(function (status) {
+        if (status === 'SUBSCRIBED') { setSync('Synced live'); fetchTasks(); }
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setSync('Live sync lost. Reload to see changes from other devices.', true);
+        }
+      });
+    fetchTasks();
   }
 
   /* Events */
@@ -507,12 +593,12 @@
     var input = $('taskName'), name = input.value.trim();
     if (!name) { input.focus(); return; }
     var cost = Number(document.querySelector('input[name="cost"]:checked').value);
-    state.tasks.push({ id: Date.now(), name: name, cost: cost, done: false });
     input.value = ''; input.focus();
-    save(); render();
+    addTask(name, cost);
   });
   $('clear').addEventListener('click', function () {
-    state.tasks = []; save(); render();
+    var ids = state.tasks.map(function (t) { return t.id; });
+    state.tasks = []; save(); render(); syncClear(ids);
   });
 
   $('date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -520,6 +606,7 @@
   state.date = today;
   paintThemeButton();
   render();
+  connect();
 })();
 </script>
 </body>
